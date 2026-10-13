@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.application.booking_service import BookingService
+from app.application.calendar_service import CalendarService
 from app.application.room_service import RoomService
 from app.core.config import get_settings
 from app.infrastructure.cache.redis_client import get_redis
@@ -48,5 +49,14 @@ def get_room_service() -> RoomService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_calendar_service() -> CalendarService:
+    session_factory = get_async_sessionmaker()
+    return CalendarService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory), clock=_utc_now
+    )
+
+
 BookingServiceDep = Annotated[BookingService, Depends(get_booking_service)]
 RoomServiceDep = Annotated[RoomService, Depends(get_room_service)]
+CalendarServiceDep = Annotated[CalendarService, Depends(get_calendar_service)]

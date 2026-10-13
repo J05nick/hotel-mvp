@@ -79,6 +79,19 @@ GET  /api/v1/bookings/{id}
 
 Lock order is always `rooms` then `bookings`.
 
+## Calendar snapshot
+
+```
+GET /api/v1/calendar?from=<ISO tz-aware>&to=<ISO tz-aware>   -> rooms + bookings of the window
+```
+
+The board's initial state (the live changes then arrive over the WebSocket). The window is
+half-open `[from, to)` and at most 14 days (`422 invalid_window` otherwise). Each room carries
+its `status` and the bookings overlapping the window in `pending`, `confirmed`, `checked_in`
+or `completed`; cancelled / expired bookings and lapsed holds are omitted. `generated_at`
+is the server clock at read time. The response contains occupancy only, **never guest data**:
+the endpoint is unauthenticated.
+
 ## Real-time events (WebSocket)
 
 `ws://localhost:8000/ws/events` (optionally `?room_id=<uuid>&room_id=<uuid>`).

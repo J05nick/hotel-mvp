@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field
 
+from app.application.calendar_service import Calendar
 from app.domain.entities import Booking, Room
 from app.domain.enums import BookingStatus, RoomStatus
 
@@ -67,6 +68,51 @@ class RoomResponse(BaseModel):
             capacity=room.capacity,
             price_per_block_cents=room.price_per_block_cents,
             status=room.status,
+        )
+
+
+class CalendarBookingResponse(BaseModel):
+    """Public view of a booking: occupancy only, deliberately WITHOUT guest data."""
+
+    id: UUID
+    status: BookingStatus
+    start: datetime
+    end: datetime
+    hold_expires_at: datetime | None
+
+
+class RoomCalendarResponse(RoomResponse):
+    bookings: list[CalendarBookingResponse]
+
+
+class CalendarResponse(BaseModel):
+    generated_at: datetime
+    start: datetime
+    end: datetime
+    rooms: list[RoomCalendarResponse]
+
+    @classmethod
+    def from_calendar(cls, calendar: Calendar) -> CalendarResponse:
+        return cls(
+            generated_at=calendar.generated_at,
+            start=calendar.start,
+            end=calendar.end,
+            rooms=[
+                RoomCalendarResponse(
+                    **RoomResponse.from_entity(entry.room).model_dump(),
+                    bookings=[
+                        CalendarBookingResponse(
+                            id=b.id,
+                            status=b.status,
+                            start=b.slot.start,
+                            end=b.slot.end,
+                            hold_expires_at=b.hold_expires_at,
+                        )
+                        for b in entry.bookings
+                    ],
+                )
+                for entry in calendar.rooms
+            ],
         )
 
 

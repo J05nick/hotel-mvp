@@ -20,7 +20,7 @@ from typing import Self
 from uuid import UUID
 
 from psycopg import errors as pg_errors
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,6 +38,12 @@ from app.infrastructure.db.models import BOOKING_OVERLAP_CONSTRAINT, BookingMode
 _IDEMPOTENCY_CONSTRAINT = "uq_bookings_idempotency_key"
 # A guest holds / has the room: confirmed but not yet completed.
 _IN_PROGRESS_STATUSES = (BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN)
+_CALENDAR_STATUSES = (
+    BookingStatus.PENDING,
+    BookingStatus.CONFIRMED,
+    BookingStatus.CHECKED_IN,
+    BookingStatus.COMPLETED,
+)
 
 
 @contextmanager
@@ -102,6 +108,12 @@ class SqlAlchemyRoomRepository:
         with translate_db_errors():
             model = await self._session.get(RoomModel, room_id)
         return _room_to_entity(model) if model else None
+
+    async def list_all(self) -> list[Room]:
+        stmt = select(RoomModel).order_by(RoomModel.number)
+        with translate_db_errors():
+            rows = (await self._session.execute(stmt)).scalars().all()
+        return [_room_to_entity(row) for row in rows]
 
     async def get_for_update(self, room_id: UUID, *, skip_locked: bool = False) -> Room | None:
         stmt = (
@@ -187,6 +199,27 @@ class SqlAlchemyBookingRepository:
             # Optimistic locking: UPDATE ... WHERE version_id = :loaded bumps the version.
             await self._session.flush()
         booking.version = model.version_id
+
+    async def list_visible_in_window(
+        self, start: datetime, end: datetime, now: datetime
+    ) -> list[Booking]:
+        stmt = (
+            select(BookingModel)
+            .where(
+                BookingModel.during.overlaps(Range(start, end, bounds="[)")),
+                BookingModel.status.in_(_CALENDAR_STATUSES),
+                # A hold past its deadline no longer blocks anything (the API frees the
+                # slot on the next request and the sweep expires the row within a minute).
+                or_(
+                    BookingModel.status != BookingStatus.PENDING,
+                    BookingModel.hold_expires_at > now,
+                ),
+            )
+            .order_by(func.lower(BookingModel.during))
+        )
+        with translate_db_errors():
+            rows = (await self._session.execute(stmt)).scalars().all()
+        return [_booking_to_entity(row) for row in rows]
 
     async def rooms_with_finished_bookings(self, now: datetime, limit: int) -> list[UUID]:
         # Served by ix_bookings_status_end (status, upper(during)).

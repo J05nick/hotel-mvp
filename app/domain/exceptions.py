@@ -19,6 +19,10 @@ class InvalidStateTransitionError(DomainError):
     """An entity was asked to move to a status not reachable from its current one."""
 
 
+class InvalidCalendarWindowError(DomainError):
+    """The requested calendar window is empty, inverted, naive or too wide."""
+
+
 class NotFoundError(DomainError):
     """Base class for missing aggregates."""
 

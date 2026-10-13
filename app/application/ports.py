@@ -19,6 +19,10 @@ from app.domain.value_objects import TimeSlot
 class RoomRepository(Protocol):
     async def get(self, room_id: UUID) -> Room | None: ...
 
+    async def list_all(self) -> list[Room]:
+        """Every room ordered by number."""
+        ...
+
     async def get_for_update(self, room_id: UUID, *, skip_locked: bool = False) -> Room | None:
         """`SELECT ... FOR UPDATE [SKIP LOCKED]`. With `skip_locked`, returns None when
         another transaction holds the row (the caller treats it as "someone else is on it")."""
@@ -53,6 +57,16 @@ class BookingRepository(Protocol):
 
     async def save(self, booking: Booking) -> None:
         """Persist status / hold changes of a booking loaded in this unit of work."""
+        ...
+
+    async def list_visible_in_window(
+        self, start: datetime, end: datetime, now: datetime
+    ) -> list[Booking]:
+        """Bookings overlapping [start, end) that occupy or occupied the calendar.
+
+        PENDING / CONFIRMED / CHECKED_IN / COMPLETED; lapsed unconfirmed holds,
+        cancelled and expired bookings are not visible.
+        """
         ...
 
     async def rooms_with_finished_bookings(self, now: datetime, limit: int) -> list[UUID]:

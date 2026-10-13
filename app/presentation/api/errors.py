@@ -11,6 +11,7 @@ from app.domain.exceptions import (
     DomainError,
     HoldExpiredError,
     IdempotencyKeyReuseError,
+    InvalidCalendarWindowError,
     InvalidStateTransitionError,
     InvalidTimeSlotError,
     NotFoundError,
@@ -23,6 +24,7 @@ from app.domain.exceptions import (
 _STATUS_BY_ERROR: Final[tuple[tuple[type[DomainError], int, str], ...]] = (
     (NotFoundError, status.HTTP_404_NOT_FOUND, "not_found"),
     (InvalidTimeSlotError, status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_time_slot"),
+    (InvalidCalendarWindowError, status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_window"),
     (SlotUnavailableError, status.HTTP_409_CONFLICT, "slot_unavailable"),
     (IdempotencyKeyReuseError, status.HTTP_422_UNPROCESSABLE_CONTENT, "idempotency_key_reuse"),
     (InvalidStateTransitionError, status.HTTP_409_CONFLICT, "invalid_state_transition"),
