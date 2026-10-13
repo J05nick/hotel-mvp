@@ -17,3 +17,35 @@ class SlotUnavailableError(DomainError):
 
 class InvalidStateTransitionError(DomainError):
     """An entity was asked to move to a status not reachable from its current one."""
+
+
+class NotFoundError(DomainError):
+    """Base class for missing aggregates."""
+
+
+class RoomNotFoundError(NotFoundError):
+    pass
+
+
+class BookingNotFoundError(NotFoundError):
+    pass
+
+
+class RoomNotBookableError(DomainError):
+    """The room is out of service (e.g. under maintenance)."""
+
+
+class HoldExpiredError(DomainError):
+    """The 5-minute hold lapsed before the booking was confirmed."""
+
+
+class IdempotencyKeyReuseError(DomainError):
+    """An Idempotency-Key was replayed with different request parameters."""
+
+
+class DuplicateIdempotencyKeyError(DomainError):
+    """Persistence signal: another request already stored this Idempotency-Key."""
+
+
+class ResourceBusyError(DomainError):
+    """A database lock or statement timeout fired; the caller may retry."""

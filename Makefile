@@ -23,7 +23,7 @@ revision:       ## Create a migration: make revision m="add something"
 	$(BACKEND) alembic revision --autogenerate -m "$(m)"
 
 test:           ## Unit + integration tests inside the api container
-	$(BACKEND) sh -c 'TEST_DATABASE_URL=$${DATABASE_URL%/*}/postgres pytest -q'
+	$(BACKEND) sh -c 'TEST_DATABASE_URL=$${DATABASE_URL%/*}/postgres TEST_REDIS_URL=$${REDIS_URL%/*}/15 pytest -q'
 
 test-unit:      ## Unit tests only (no database required)
 	$(BACKEND) pytest -q tests/unit

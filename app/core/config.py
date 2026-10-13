@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # --- Booking domain -----------------------------------------------------
     booking_hold_ttl_seconds: int = Field(default=300, ge=30, le=3_600)
 
+    # --- Real-time events ---------------------------------------------------
+    # Redis pub/sub channel shared by every API replica and the Celery workers.
+    events_channel: str = "hotel:events"
+    # Per-WebSocket outbound buffer; a client that falls this far behind is dropped.
+    ws_max_queue: int = Field(default=256, ge=1)
+
     # --- HTTP ---------------------------------------------------------------
     # NoDecode: accept both JSON (`["a","b"]`) and CSV (`a,b`) from the env.
     cors_origins: Annotated[list[str], NoDecode] = Field(

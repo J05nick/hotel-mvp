@@ -32,6 +32,8 @@ x-backend: &backend
     CELERY_BROKER_URL: redis://redis:6379/1
     CELERY_RESULT_BACKEND: redis://redis:6379/2
     BOOKING_HOLD_TTL_SECONDS: ${BOOKING_HOLD_TTL_SECONDS:-300}
+    EVENTS_CHANNEL: ${EVENTS_CHANNEL:-hotel:events}
+    WS_MAX_QUEUE: ${WS_MAX_QUEUE:-256}
     CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
   volumes:
     # Bind-mount source for hot reload in development only.
