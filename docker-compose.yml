@@ -1,6 +1,9 @@
 # =============================================================================
-# Hotel MVP — local orchestration
+# Hotel MVP BACKEND — local orchestration (repository: hotel-mvp-backend)
 #   docker compose up --build
+#
+# The frontend lives in its own repository (hotel-mvp-frontend) and talks to
+# this stack over HTTP/WebSocket on http://localhost:${API_PORT:-8000}.
 #
 # Topology:
 #   postgres ──┐
@@ -16,7 +19,7 @@ name: hotel-mvp
 # composed here from the primitives in `.env` so credentials live in one place.
 x-backend: &backend
   build:
-    context: ./backend
+    context: .
     target: dev
   image: hotel-mvp/backend:dev
   environment:
@@ -32,8 +35,8 @@ x-backend: &backend
     CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
   volumes:
     # Bind-mount source for hot reload in development only.
-    - ./backend/app:/app/app:ro
-    - ./backend/alembic:/app/alembic:ro
+    - ./app:/app/app:ro
+    - ./alembic:/app/alembic:ro
   depends_on: &backend-deps
     postgres:
       condition: service_healthy

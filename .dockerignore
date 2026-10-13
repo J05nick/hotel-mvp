@@ -1,3 +1,5 @@
+.git
+.github
 .venv
 __pycache__
 *.pyc
@@ -5,3 +7,4 @@ __pycache__
 .pytest_cache
 .ruff_cache
 .env
+tests/integration/__pycache__
