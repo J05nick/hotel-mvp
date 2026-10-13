@@ -1,7 +1,7 @@
 """SQLAlchemy adapters for the repository ports + Unit of Work.
 
 LOCK ORDER (prevents deadlocks): always lock `rooms` rows BEFORE `bookings` rows
-inside one transaction. Phase 3 (Celery) must follow the same order.
+inside one transaction. The Celery housekeeping tasks follow the same order.
 
 Database errors are translated to domain errors here, keyed on the stable
 constraint names declared in the models/migration:

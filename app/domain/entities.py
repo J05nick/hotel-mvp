@@ -1,6 +1,6 @@
 """Domain entities (persistence-agnostic).
 
-Repositories (FASE 2) map between these dataclasses and the SQLAlchemy models
+Repositories map between these dataclasses and the SQLAlchemy models
 in `app.infrastructure.db.models`, keeping the domain free of ORM concerns.
 """
 
@@ -18,7 +18,7 @@ from app.domain.value_objects import TimeSlot
 # Explicit state machines — any transition not listed here is a bug.
 ROOM_TRANSITIONS: Final[dict[RoomStatus, frozenset[RoomStatus]]] = {
     # AVAILABLE -> CLEANING: a finished time-block booking leaves the room dirty even
-    # though no explicit check-in ever marked it OCCUPIED (Celery housekeeping, FASE 3).
+    # though no explicit check-in ever marked it OCCUPIED (Celery housekeeping).
     RoomStatus.AVAILABLE: frozenset(
         {RoomStatus.OCCUPIED, RoomStatus.CLEANING, RoomStatus.MAINTENANCE}
     ),

@@ -22,6 +22,7 @@ from app.infrastructure.db.session import get_async_engine
 from app.infrastructure.events.subscriber import EventSubscriber
 from app.presentation.api.bookings import router as bookings_router
 from app.presentation.api.errors import register_error_handlers
+from app.presentation.api.rooms import router as rooms_router
 from app.presentation.ws.manager import ConnectionManager
 from app.presentation.ws.router import router as ws_router
 
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
     app.include_router(bookings_router)
+    app.include_router(rooms_router)
     app.include_router(ws_router)
 
     @app.get("/health/live", response_model=HealthStatus, tags=["health"])

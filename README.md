@@ -2,10 +2,8 @@
 
 Backend of the hotel booking system sold in **30-minute blocks**. FastAPI +
 SQLAlchemy + PostgreSQL (`tstzrange` / GiST exclusion constraints) + Redis +
-Celery. The Next.js client lives in its own repository, **hotel-mvp-frontend**.
-
-> Status: **FASE 3** (scheduled housekeeping with Celery Beat). The Next.js
-> client is built in FASE 4; the full playbook README arrives in FASE 5.
+Celery. The Next.js client lives in its own repository, **hotel-mvp-frontend**,
+and consumes the REST and WebSocket APIs documented below.
 
 ## Quick start
 
@@ -50,7 +48,7 @@ tests/             unit/ (pure) and integration/ (real PostgreSQL)
 `EXCLUDE USING gist (room_id WITH =, during WITH &&)` over active statuses, so
 overlapping reservations are impossible regardless of application races.
 
-## Reservation flow (FASE 2)
+## Reservation flow
 
 ```
 POST /api/v1/bookings            hold a range for 5 min  -> 201 (200 on Idempotency-Key replay)
@@ -104,7 +102,7 @@ by any replica or Celery worker reach all browsers.
 Delivery is best-effort: treat the REST snapshot as the source of truth. A client
 that cannot keep up is closed with code `1013`; reconnect and refetch.
 
-## Scheduled housekeeping (Celery Beat, FASE 3)
+## Scheduled housekeeping (Celery Beat)
 
 Beat enqueues two tasks every 60 s (`app/infrastructure/tasks/celery_app.py`);
 run **exactly one** `celery-beat` container, scale `celery-worker` freely.
@@ -129,4 +127,19 @@ Rules worth knowing:
 * Tasks reuse the API's async use cases through `asyncio.run` with a private, pool-less
   engine and Redis client per run.
 
-Rooms leave `CLEANING` through a future staff action (not part of the MVP scope yet).
+## Room cleaning
+
+```
+POST /api/v1/rooms/{id}/cleaned     CLEANING -> AVAILABLE   (200 RoomResponse)
+```
+
+Closes the loop of a stay: booking ends -> Beat flags the room `CLEANING` -> staff call
+this endpoint -> the room is `AVAILABLE` again. It emits `room.status_changed`
+(`previous_status: "cleaning"`) so every connected calendar updates.
+
+* Idempotent: an already `AVAILABLE` room returns 200 and emits nothing.
+* Only valid from `CLEANING`: `OCCUPIED` and `MAINTENANCE` rooms answer
+  `409 invalid_state_transition` (ending maintenance is a different action).
+* Takes an exclusive row lock on the room, so it serialises with the Celery sweep.
+* Staff-only by nature: the MVP has no authentication yet; add an auth dependency in
+  `app/presentation/api/rooms.py` before exposing it publicly.

@@ -27,6 +27,7 @@ from sqlalchemy.pool import NullPool
 from app.application.booking_service import BookingService
 from app.application.housekeeping_service import HousekeepingService
 from app.application.ports import SlotHoldStore
+from app.application.room_service import RoomService
 from app.domain.enums import RoomStatus
 from app.infrastructure.cache.slot_holds import RedisSlotHoldStore
 from app.infrastructure.db.models import RoomModel
@@ -177,3 +178,20 @@ def housekeeping(harness: Harness) -> Housekeeping:
         clock=harness.clock,
     )
     return Housekeeping(service, events)
+
+
+@dataclass
+class Rooms:
+    service: RoomService
+    events: RecordingPublisher
+
+
+@pytest.fixture
+def rooms(harness: Harness) -> Rooms:
+    events = RecordingPublisher()
+    service = RoomService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(harness.session_factory),
+        events=events,
+        clock=harness.clock,
+    )
+    return Rooms(service, events)

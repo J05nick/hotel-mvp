@@ -1,4 +1,4 @@
-"""Scheduled housekeeping (driven by Celery Beat, FASE 3).
+"""Scheduled housekeeping (driven by Celery Beat).
 
 Two idempotent sweeps, safe to run concurrently and to run twice:
 

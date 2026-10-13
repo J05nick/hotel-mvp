@@ -1,4 +1,4 @@
-# Developer entrypoints. Full playbook arrives in FASE 5 (README.md).
+# Developer entrypoints. See README.md for the full run book.
 COMPOSE ?= docker compose
 BACKEND  = $(COMPOSE) exec api
 

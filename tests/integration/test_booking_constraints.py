@@ -1,4 +1,4 @@
-"""Prove the database-level guarantees of the schema (FASE 1)."""
+"""Prove the database-level guarantees of the schema."""
 
 from __future__ import annotations
 

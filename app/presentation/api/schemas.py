@@ -7,8 +7,8 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field
 
-from app.domain.entities import Booking
-from app.domain.enums import BookingStatus
+from app.domain.entities import Booking, Room
+from app.domain.enums import BookingStatus, RoomStatus
 
 
 class CreateHoldRequest(BaseModel):
@@ -47,6 +47,26 @@ class BookingResponse(BaseModel):
             hold_expires_at=booking.hold_expires_at,
             guest_name=booking.guest_name,
             guest_email=booking.guest_email,
+        )
+
+
+class RoomResponse(BaseModel):
+    id: UUID
+    number: str
+    name: str
+    capacity: int
+    price_per_block_cents: int
+    status: RoomStatus
+
+    @classmethod
+    def from_entity(cls, room: Room) -> RoomResponse:
+        return cls(
+            id=room.id,
+            number=room.number,
+            name=room.name,
+            capacity=room.capacity,
+            price_per_block_cents=room.price_per_block_cents,
+            status=room.status,
         )
 
 

@@ -151,7 +151,7 @@ services:
 
   # CONCURRENCY NOTE: Celery Beat is a scheduler, not a worker. Running more
   # than one instance would enqueue every periodic task N times. Keep it at
-  # exactly one replica (tasks are additionally idempotent — see FASE 3).
+  # exactly one replica (tasks are additionally idempotent).
   celery-beat:
     <<: *backend
     command:

@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.application.booking_service import BookingService
+from app.application.room_service import RoomService
 from app.core.config import get_settings
 from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.cache.slot_holds import RedisSlotHoldStore
@@ -36,4 +37,16 @@ def get_booking_service() -> BookingService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_room_service() -> RoomService:
+    settings = get_settings()
+    session_factory = get_async_sessionmaker()
+    return RoomService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
+        events=RedisEventPublisher(get_redis(), settings.events_channel),
+        clock=_utc_now,
+    )
+
+
 BookingServiceDep = Annotated[BookingService, Depends(get_booking_service)]
+RoomServiceDep = Annotated[RoomService, Depends(get_room_service)]
