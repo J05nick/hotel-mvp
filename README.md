@@ -4,8 +4,8 @@ Backend of the hotel booking system sold in **30-minute blocks**. FastAPI +
 SQLAlchemy + PostgreSQL (`tstzrange` / GiST exclusion constraints) + Redis +
 Celery. The Next.js client lives in its own repository, **hotel-mvp-frontend**.
 
-> Status: **FASE 2** (booking core + real-time). Celery Beat tasks arrive in
-> FASE 3; the full playbook README arrives in FASE 5.
+> Status: **FASE 3** (scheduled housekeeping with Celery Beat). The Next.js
+> client is built in FASE 4; the full playbook README arrives in FASE 5.
 
 ## Quick start
 
@@ -96,10 +96,37 @@ by any replica or Celery worker reach all browsers.
 
 | `type` | `data` |
 |---|---|
-| `booking.hold_created` / `.confirmed` / `.cancelled` / `.expired` | `booking_id, status, start, end, hold_expires_at` |
+| `booking.hold_created` / `.confirmed` / `.cancelled` / `.completed` / `.expired` | `booking_id, status, start, end, hold_expires_at` |
 | `room.status_changed` | `status, previous_status` |
 | `system.connected` | `{}` — sent right after the handshake |
 | `system.resync` | `{}` — events may have been lost: refetch the REST snapshot |
 
 Delivery is best-effort: treat the REST snapshot as the source of truth. A client
 that cannot keep up is closed with code `1013`; reconnect and refetch.
+
+## Scheduled housekeeping (Celery Beat, FASE 3)
+
+Beat enqueues two tasks every 60 s (`app/infrastructure/tasks/celery_app.py`);
+run **exactly one** `celery-beat` container, scale `celery-worker` freely.
+
+| Task | What it does |
+|---|---|
+| `housekeeping.complete_finished_bookings` | `CONFIRMED` / `CHECKED_IN` bookings whose range ended -> `COMPLETED`; their room -> `CLEANING`; emits `booking.completed` and `room.status_changed` over the WebSocket |
+| `housekeeping.expire_stale_holds` | `PENDING` bookings whose 5-minute hold lapsed -> `EXPIRED`; emits `booking.expired` |
+
+Rules worth knowing:
+
+* **`AVAILABLE -> CLEANING` is allowed.** Time-block stays have no explicit check-in, so a
+  finished booking dirties an `AVAILABLE` room directly. Rooms in `MAINTENANCE` or
+  already `CLEANING` keep their status (the booking still completes).
+* **Back-to-back stays:** while the next guest's booking is in progress the room is not
+  flagged; it turns `CLEANING` when the last consecutive stay ends.
+* **Safe to overlap and repeat:** one transaction per room, `FOR UPDATE SKIP LOCKED`,
+  lock order rooms -> bookings, and every transition checks the current status. Two
+  workers or a slow tick never double-complete or double-emit.
+* **Stale ticks are dropped:** queued runs expire after 55 s so a worker outage does not
+  cause a burst of catch-up runs (the next tick does the same work).
+* Tasks reuse the API's async use cases through `asyncio.run` with a private, pool-less
+  engine and Redis client per run.
+
+Rooms leave `CLEANING` through a future staff action (not part of the MVP scope yet).

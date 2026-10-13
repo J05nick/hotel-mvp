@@ -43,10 +43,21 @@ class ConnectionManager:
     def __init__(self, max_queue: int) -> None:
         self._max_queue = max_queue
         self._clients: set[_Client] = set()
+        self._active_sessions = 0
 
     @property
     def connection_count(self) -> int:
+        """Clients currently receiving broadcasts."""
         return len(self._clients)
+
+    @property
+    def active_sessions(self) -> int:
+        """`serve()` calls still running, including their final cleanup.
+
+        Reaches 0 only when every handler is completely done: a graceful shutdown (or a
+        test) can wait on it.
+        """
+        return self._active_sessions
 
     def broadcast(self, raw: str, room_id: UUID | None) -> None:
         """Enqueue `raw` for every interested client. Never awaits, never blocks."""
@@ -73,6 +84,7 @@ class ConnectionManager:
         """Run until the peer disconnects or is dropped. `websocket` is already accepted."""
         client = _Client(websocket, room_ids, asyncio.Queue(maxsize=self._max_queue))
         self._clients.add(client)
+        self._active_sessions += 1
         logger.info("ws.connected", extra={"clients": len(self._clients)})
         pump = client.pump = asyncio.create_task(self._pump(client))
         drain = asyncio.create_task(self._drain(client))
@@ -86,11 +98,15 @@ class ConnectionManager:
                 with contextlib.suppress(Exception):
                     await websocket.close(code=CLOSE_TRY_AGAIN_LATER)
         finally:
+            # Stop broadcasting to this client first, then reap its tasks.
             self._clients.discard(client)
-            for task in (pump, drain):
-                task.cancel()
-            await asyncio.gather(pump, drain, return_exceptions=True)
-            logger.info("ws.disconnected", extra={"clients": len(self._clients)})
+            try:
+                for task in (pump, drain):
+                    task.cancel()
+                await asyncio.gather(pump, drain, return_exceptions=True)
+                logger.info("ws.disconnected", extra={"clients": len(self._clients)})
+            finally:
+                self._active_sessions -= 1
 
     async def close_all(self, code: int = 1001) -> None:
         """Graceful shutdown (12-Factor IX): tell clients to reconnect elsewhere."""

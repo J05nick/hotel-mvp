@@ -29,6 +29,20 @@ def test_room_lifecycle() -> None:
     room.transition_to(RoomStatus.CLEANING)
     room.transition_to(RoomStatus.AVAILABLE)
     with pytest.raises(InvalidStateTransitionError):
+        room.transition_to(RoomStatus.AVAILABLE)
+
+
+def test_available_room_can_go_straight_to_cleaning() -> None:
+    """A finished time-block booking dirties the room without an explicit check-in."""
+    room = Room(number="102", name="Suite", capacity=2, price_per_block_cents=2_500)
+    room.transition_to(RoomStatus.CLEANING)
+    assert room.status is RoomStatus.CLEANING
+
+
+def test_maintenance_room_cannot_be_flagged_for_cleaning() -> None:
+    room = Room(number="103", name="Suite", capacity=2, price_per_block_cents=2_500)
+    room.transition_to(RoomStatus.MAINTENANCE)
+    with pytest.raises(InvalidStateTransitionError):
         room.transition_to(RoomStatus.CLEANING)
 
 

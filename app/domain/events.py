@@ -19,6 +19,7 @@ class EventType(StrEnum):
     BOOKING_HOLD_CREATED = "booking.hold_created"
     BOOKING_CONFIRMED = "booking.confirmed"
     BOOKING_CANCELLED = "booking.cancelled"
+    BOOKING_COMPLETED = "booking.completed"
     BOOKING_EXPIRED = "booking.expired"
     ROOM_STATUS_CHANGED = "room.status_changed"
 

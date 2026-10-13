@@ -22,13 +22,13 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Final
 from uuid import UUID, uuid4
 
+from app.application.events import booking_event
 from app.application.ports import EventPublisher, SlotHoldStore, UnitOfWork
 from app.domain.entities import Booking
 from app.domain.enums import BookingStatus, RoomStatus
-from app.domain.events import BookingEvent, DomainEvent, EventType
+from app.domain.events import DomainEvent
 from app.domain.exceptions import (
     BookingNotFoundError,
     DuplicateIdempotencyKeyError,
@@ -41,13 +41,6 @@ from app.domain.exceptions import (
 from app.domain.value_objects import TimeSlot
 
 logger = logging.getLogger(__name__)
-
-_EVENT_FOR_STATUS: Final[dict[BookingStatus, EventType]] = {
-    BookingStatus.PENDING: EventType.BOOKING_HOLD_CREATED,
-    BookingStatus.CONFIRMED: EventType.BOOKING_CONFIRMED,
-    BookingStatus.CANCELLED: EventType.BOOKING_CANCELLED,
-    BookingStatus.EXPIRED: EventType.BOOKING_EXPIRED,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,19 +56,6 @@ class CreateHoldCommand:
 class HoldResult:
     booking: Booking
     created: bool  # False => an Idempotency-Key replay returned the stored booking
-
-
-def _booking_event(booking: Booking, now: datetime) -> BookingEvent:
-    return BookingEvent(
-        type=_EVENT_FOR_STATUS[booking.status],
-        booking_id=booking.id,
-        room_id=booking.room_id,
-        status=booking.status,
-        start=booking.slot.start,
-        end=booking.slot.end,
-        occurred_at=now,
-        hold_expires_at=booking.hold_expires_at,
-    )
 
 
 class BookingService:
@@ -156,7 +136,7 @@ class BookingService:
 
             now = self._clock()
             for stale in await uow.bookings.expire_stale_holds(room.id, cmd.slot, now):
-                events.append(_booking_event(stale, now))
+                events.append(booking_event(stale, now))
 
             booking = Booking(
                 id=booking_id,
@@ -172,7 +152,7 @@ class BookingService:
             # --- LAYER 3: EXCLUDE USING gist decides who owns the range ------------
             await uow.bookings.add(booking)
             await uow.commit()
-            events.append(_booking_event(booking, now))
+            events.append(booking_event(booking, now))
             return booking
 
     async def _replay(self, cmd: CreateHoldCommand) -> Booking | None:
@@ -216,7 +196,7 @@ class BookingService:
                 booking.transition_to(BookingStatus.CONFIRMED)  # raises if not PENDING
             await uow.bookings.save(booking)
             await uow.commit()
-            events.append(_booking_event(booking, now))
+            events.append(booking_event(booking, now))
 
         # The DB row (CONFIRMED / EXPIRED) now carries the exclusion guarantee, so the
         # Redis cart blocks are no longer needed.
@@ -240,7 +220,7 @@ class BookingService:
             booking.transition_to(BookingStatus.CANCELLED)
             await uow.bookings.save(booking)
             await uow.commit()
-            event = _booking_event(booking, now)
+            event = booking_event(booking, now)
 
         await self._release(booking.room_id, booking.slot, booking.id)
         await self._events.publish([event])

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 from app.application.booking_service import BookingService
+from app.application.housekeeping_service import HousekeepingService
 from app.application.ports import SlotHoldStore
 from app.domain.enums import RoomStatus
 from app.infrastructure.cache.slot_holds import RedisSlotHoldStore
@@ -158,3 +159,21 @@ def make_harness(
 @pytest.fixture
 def harness(make_harness: Callable[..., Harness]) -> Harness:
     return make_harness()
+
+
+@dataclass
+class Housekeeping:
+    service: HousekeepingService
+    events: RecordingPublisher
+
+
+@pytest.fixture
+def housekeeping(harness: Harness) -> Housekeeping:
+    """Housekeeping sharing the booking harness' clock, database and Redis."""
+    events = RecordingPublisher()
+    service = HousekeepingService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(harness.session_factory),
+        events=events,
+        clock=harness.clock,
+    )
+    return Housekeeping(service, events)

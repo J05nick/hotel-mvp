@@ -20,7 +20,7 @@ from typing import Self
 from uuid import UUID
 
 from psycopg import errors as pg_errors
-from sqlalchemy import select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -36,6 +36,8 @@ from app.domain.value_objects import TimeSlot
 from app.infrastructure.db.models import BOOKING_OVERLAP_CONSTRAINT, BookingModel, RoomModel
 
 _IDEMPOTENCY_CONSTRAINT = "uq_bookings_idempotency_key"
+# A guest holds / has the room: confirmed but not yet completed.
+_IN_PROGRESS_STATUSES = (BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN)
 
 
 @contextmanager
@@ -101,6 +103,27 @@ class SqlAlchemyRoomRepository:
             model = await self._session.get(RoomModel, room_id)
         return _room_to_entity(model) if model else None
 
+    async def get_for_update(self, room_id: UUID, *, skip_locked: bool = False) -> Room | None:
+        stmt = (
+            select(RoomModel)
+            .where(RoomModel.id == room_id)
+            .with_for_update(skip_locked=skip_locked)
+            .execution_options(populate_existing=True)
+        )
+        with translate_db_errors():
+            model = (await self._session.execute(stmt)).scalar_one_or_none()
+        return _room_to_entity(model) if model else None
+
+    async def save(self, room: Room) -> None:
+        with translate_db_errors():
+            model = await self._session.get(RoomModel, room.id)
+            if model is None:  # pragma: no cover - callers load before saving
+                raise LookupError(f"room {room.id} is not loaded in this unit of work")
+            model.status = room.status
+            # Optimistic locking: UPDATE ... WHERE version_id = :loaded bumps the version.
+            await self._session.flush()
+        room.version = model.version_id
+
     async def get_for_share(self, room_id: UUID) -> Room | None:
         stmt = select(RoomModel).where(RoomModel.id == room_id).with_for_update(read=True)
         with translate_db_errors():
@@ -164,6 +187,66 @@ class SqlAlchemyBookingRepository:
             # Optimistic locking: UPDATE ... WHERE version_id = :loaded bumps the version.
             await self._session.flush()
         booking.version = model.version_id
+
+    async def rooms_with_finished_bookings(self, now: datetime, limit: int) -> list[UUID]:
+        # Served by ix_bookings_status_end (status, upper(during)).
+        stmt = (
+            select(BookingModel.room_id)
+            .where(
+                BookingModel.status.in_(_IN_PROGRESS_STATUSES),
+                func.upper(BookingModel.during) <= now,
+            )
+            .distinct()
+            .limit(limit)
+        )
+        with translate_db_errors():
+            return list((await self._session.execute(stmt)).scalars().all())
+
+    async def list_finished_for_update(self, room_id: UUID, now: datetime) -> list[Booking]:
+        stmt = (
+            select(BookingModel)
+            .where(
+                BookingModel.room_id == room_id,
+                BookingModel.status.in_(_IN_PROGRESS_STATUSES),
+                func.upper(BookingModel.during) <= now,
+            )
+            .order_by(func.upper(BookingModel.during))
+            # A booking being confirmed/cancelled by the API right now is simply picked
+            # up by the next tick instead of making the whole sweep wait on it.
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        with translate_db_errors():
+            rows = (await self._session.execute(stmt)).scalars().all()
+        return [_booking_to_entity(row) for row in rows]
+
+    async def has_active_booking(self, room_id: UUID, now: datetime) -> bool:
+        stmt = select(
+            exists().where(
+                BookingModel.room_id == room_id,
+                BookingModel.status.in_(_IN_PROGRESS_STATUSES),
+                BookingModel.during.contains(now),
+            )
+        )
+        with translate_db_errors():
+            return bool((await self._session.execute(stmt)).scalar_one())
+
+    async def list_expired_holds_for_update(self, now: datetime, limit: int) -> list[Booking]:
+        # Served by the partial index ix_bookings_pending_hold_expires_at.
+        stmt = (
+            select(BookingModel)
+            .where(
+                BookingModel.status == BookingStatus.PENDING,
+                BookingModel.hold_expires_at <= now,
+            )
+            .order_by(BookingModel.hold_expires_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        with translate_db_errors():
+            rows = (await self._session.execute(stmt)).scalars().all()
+        return [_booking_to_entity(row) for row in rows]
 
     async def expire_stale_holds(
         self, room_id: UUID, slot: TimeSlot, now: datetime

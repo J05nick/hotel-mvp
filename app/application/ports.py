@@ -19,6 +19,15 @@ from app.domain.value_objects import TimeSlot
 class RoomRepository(Protocol):
     async def get(self, room_id: UUID) -> Room | None: ...
 
+    async def get_for_update(self, room_id: UUID, *, skip_locked: bool = False) -> Room | None:
+        """`SELECT ... FOR UPDATE [SKIP LOCKED]`. With `skip_locked`, returns None when
+        another transaction holds the row (the caller treats it as "someone else is on it")."""
+        ...
+
+    async def save(self, room: Room) -> None:
+        """Persist status changes of a room loaded in this unit of work."""
+        ...
+
     async def get_for_share(self, room_id: UUID) -> Room | None:
         """`SELECT ... FOR SHARE`: concurrent bookers coexist, but the room row
         cannot be changed (maintenance, cleaning) until this transaction ends."""
@@ -44,6 +53,22 @@ class BookingRepository(Protocol):
 
     async def save(self, booking: Booking) -> None:
         """Persist status / hold changes of a booking loaded in this unit of work."""
+        ...
+
+    async def rooms_with_finished_bookings(self, now: datetime, limit: int) -> list[UUID]:
+        """Rooms having CONFIRMED / CHECKED_IN bookings whose range already ended."""
+        ...
+
+    async def list_finished_for_update(self, room_id: UUID, now: datetime) -> list[Booking]:
+        """Ended CONFIRMED / CHECKED_IN bookings of the room, row-locked with SKIP LOCKED."""
+        ...
+
+    async def has_active_booking(self, room_id: UUID, now: datetime) -> bool:
+        """True when a CONFIRMED / CHECKED_IN booking covers `now` in this room."""
+        ...
+
+    async def list_expired_holds_for_update(self, now: datetime, limit: int) -> list[Booking]:
+        """PENDING bookings whose hold lapsed, row-locked with SKIP LOCKED."""
         ...
 
     async def expire_stale_holds(

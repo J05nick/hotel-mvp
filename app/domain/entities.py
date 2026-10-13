@@ -17,7 +17,11 @@ from app.domain.value_objects import TimeSlot
 
 # Explicit state machines — any transition not listed here is a bug.
 ROOM_TRANSITIONS: Final[dict[RoomStatus, frozenset[RoomStatus]]] = {
-    RoomStatus.AVAILABLE: frozenset({RoomStatus.OCCUPIED, RoomStatus.MAINTENANCE}),
+    # AVAILABLE -> CLEANING: a finished time-block booking leaves the room dirty even
+    # though no explicit check-in ever marked it OCCUPIED (Celery housekeeping, FASE 3).
+    RoomStatus.AVAILABLE: frozenset(
+        {RoomStatus.OCCUPIED, RoomStatus.CLEANING, RoomStatus.MAINTENANCE}
+    ),
     RoomStatus.OCCUPIED: frozenset({RoomStatus.CLEANING}),
     RoomStatus.CLEANING: frozenset({RoomStatus.AVAILABLE, RoomStatus.MAINTENANCE}),
     RoomStatus.MAINTENANCE: frozenset({RoomStatus.AVAILABLE}),

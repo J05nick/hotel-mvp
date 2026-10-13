@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings, get_settings
 
@@ -29,6 +30,22 @@ def _engine_kwargs(settings: Settings) -> dict[str, Any]:
         "max_overflow": settings.db_max_overflow,
         "pool_timeout": settings.db_pool_timeout_seconds,
         "pool_pre_ping": True,
+        **_connect_kwargs(settings),
+    }
+
+
+def build_task_engine(settings: Settings) -> AsyncEngine:
+    """Engine for ONE short-lived event loop (Celery tasks run `asyncio.run` per call).
+
+    NullPool: connections must never outlive the loop that created them.
+    """
+    return create_async_engine(
+        str(settings.database_url), poolclass=NullPool, **_connect_kwargs(settings)
+    )
+
+
+def _connect_kwargs(settings: Settings) -> dict[str, Any]:
+    return {
         "connect_args": {
             # CONCURRENCY: bound how long any statement may wait for a row lock
             # (e.g. SELECT ... FOR UPDATE on a contended room). Failing fast is

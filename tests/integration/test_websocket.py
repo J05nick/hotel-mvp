@@ -6,12 +6,14 @@ import asyncio
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 
 import pytest
 import redis as sync_redis
 from fastapi import WebSocket
 from fastapi.testclient import TestClient
+from starlette.testclient import WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import get_settings
@@ -45,6 +47,25 @@ class _Env:
         self._pub.publish(self.channel, to_wire(event).model_dump_json())
 
 
+@contextmanager
+def _connect(env: _Env, path: str = "/ws/events", **kwargs: Any) -> Iterator[WebSocketTestSession]:
+    """Open a socket and, on exit, wait until the server finished tearing it down.
+
+    Starlette's TestClient cancels the app's scope right after sending the disconnect,
+    without waiting for the handler's cleanup; leaving the block early would race it.
+    """
+    manager = cast("ConnectionManager", env.client.app.state.connection_manager)  # type: ignore[attr-defined]
+    with env.client.websocket_connect(path, **kwargs) as ws:
+        sessions_with_me = manager.active_sessions
+        try:
+            yield ws
+        finally:
+            ws.close()
+            deadline = time.monotonic() + 5
+            while manager.active_sessions >= sessions_with_me and time.monotonic() < deadline:
+                time.sleep(0.005)
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, redis_url: str) -> Iterator[_Env]:
     channel = f"test:events:{uuid.uuid4().hex}"
@@ -73,7 +94,7 @@ def _booking_event(room_id: uuid.UUID) -> BookingEvent:
 
 def test_client_receives_booking_and_room_events(env: _Env) -> None:
     room = uuid.uuid4()
-    with env.client.websocket_connect("/ws/events") as ws:
+    with _connect(env) as ws:
         assert ws.receive_json()["type"] == "system.connected"
         env.wait_for_subscriber()
 
@@ -98,7 +119,7 @@ def test_client_receives_booking_and_room_events(env: _Env) -> None:
 
 def test_room_filter_only_delivers_subscribed_rooms(env: _Env) -> None:
     wanted, other = uuid.uuid4(), uuid.uuid4()
-    with env.client.websocket_connect(f"/ws/events?room_id={wanted}") as ws:
+    with _connect(env, f"/ws/events?room_id={wanted}") as ws:
         assert ws.receive_json()["type"] == "system.connected"
         env.wait_for_subscriber()
 
@@ -111,8 +132,8 @@ def test_room_filter_only_delivers_subscribed_rooms(env: _Env) -> None:
 def test_event_fans_out_to_every_client(env: _Env) -> None:
     room = uuid.uuid4()
     with (
-        env.client.websocket_connect("/ws/events") as a,
-        env.client.websocket_connect("/ws/events") as b,
+        _connect(env) as a,
+        _connect(env) as b,
     ):
         a.receive_json()
         b.receive_json()
@@ -132,15 +153,13 @@ def test_foreign_origin_is_rejected(env: _Env) -> None:
 
 
 def test_allowed_origin_is_accepted(env: _Env) -> None:
-    with env.client.websocket_connect(
-        "/ws/events", headers={"origin": "http://localhost:3000"}
-    ) as ws:
+    with _connect(env, headers={"origin": "http://localhost:3000"}) as ws:
         assert ws.receive_json()["type"] == "system.connected"
 
 
 def test_idle_subscription_survives_longer_than_the_shared_client_timeout(env: _Env) -> None:
     """The shared Redis client has socket_timeout=5; the subscriber must not inherit it."""
-    with env.client.websocket_connect("/ws/events") as ws:
+    with _connect(env) as ws:
         ws.receive_json()
         env.wait_for_subscriber()
         time.sleep(6.5)

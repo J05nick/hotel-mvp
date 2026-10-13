@@ -1,7 +1,6 @@
-"""Celery application (broker & result backend: Redis).
+"""Celery application (broker & result backend: Redis) and the Beat schedule.
 
-The periodic schedule (Celery Beat) is registered in FASE 3. Worker and Beat
-containers already start against this app so the topology is complete.
+Run exactly ONE Beat process (it is a scheduler); scale workers freely.
 """
 
 from __future__ import annotations
@@ -20,6 +19,8 @@ celery_app = Celery(
     "hotel",
     broker=str(_settings.celery_broker_url),
     backend=str(_settings.celery_result_backend),
+    # Import task modules when the worker starts (string => no import cycle).
+    include=["app.infrastructure.tasks.housekeeping"],
 )
 
 celery_app.conf.update(
@@ -39,7 +40,20 @@ celery_app.conf.update(
     result_expires=3_600,
     task_time_limit=120,
     task_soft_time_limit=90,
-    beat_schedule={},  # populated in FASE 3
+    beat_schedule={
+        # Every minute: finished bookings -> COMPLETED, room -> CLEANING, WebSocket event.
+        "complete-finished-bookings": {
+            "task": "housekeeping.complete_finished_bookings",
+            "schedule": 60.0,
+            "options": {"expires": 55},
+        },
+        # Every minute: PENDING bookings with a lapsed 5-minute hold -> EXPIRED.
+        "expire-stale-holds": {
+            "task": "housekeeping.expire_stale_holds",
+            "schedule": 60.0,
+            "options": {"expires": 55},
+        },
+    },
 )
 
 
