@@ -2,7 +2,7 @@
 COMPOSE ?= docker compose
 BACKEND  = $(COMPOSE) exec api
 
-.PHONY: env up down logs migrate revision test test-unit lint typecheck psql
+.PHONY: env up down logs migrate seed revision test test-unit lint typecheck psql
 
 env:            ## Create .env from the template (no overwrite)
 	@test -f .env || cp .env.example .env
@@ -18,6 +18,9 @@ logs:           ## Tail the JSON log stream of every service
 
 migrate:        ## Apply pending Alembic migrations
 	$(COMPOSE) run --rm migrate
+
+seed:           ## Load demo rooms (idempotent; the API has no endpoint to create rooms)
+	$(COMPOSE) exec -T postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/seed_demo.sql
 
 revision:       ## Create a migration: make revision m="add something"
 	$(BACKEND) alembic revision --autogenerate -m "$(m)"
