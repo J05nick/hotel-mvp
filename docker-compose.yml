@@ -1,172 +1,37 @@
-# =============================================================================
-# Hotel MVP BACKEND — local orchestration (repository: hotel-mvp-backend)
-#   docker compose up --build
-#
-# The frontend lives in its own repository (hotel-mvp-frontend) and talks to
-# this stack over HTTP/WebSocket on http://localhost:${API_PORT:-8000}.
-#
-# Topology:
-#   postgres ──┐
-#   redis ─────┼──> migrate (one-shot: alembic upgrade head)
-#              └──> api (FastAPI + WebSockets)
-#                   celery-worker (N replicas OK)
-#                   celery-beat   (EXACTLY 1 replica — see note below)
-# =============================================================================
-name: hotel-mvp
-
-# Shared definition for every container that runs the backend image.
-# All config comes from the environment (12-Factor III); connection strings are
-# composed here from the primitives in `.env` so credentials live in one place.
-x-backend: &backend
-  build:
-    context: .
-    target: dev
-  image: hotel-mvp/backend:dev
-  environment:
-    ENVIRONMENT: ${ENVIRONMENT:-development}
-    LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?set in .env}:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/${POSTGRES_DB:?set in .env}
-    DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
-    DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
-    REDIS_URL: redis://redis:6379/0
-    CELERY_BROKER_URL: redis://redis:6379/1
-    CELERY_RESULT_BACKEND: redis://redis:6379/2
-    BOOKING_HOLD_TTL_SECONDS: ${BOOKING_HOLD_TTL_SECONDS:-300}
-    EVENTS_CHANNEL: ${EVENTS_CHANNEL:-hotel:events}
-    WS_MAX_QUEUE: ${WS_MAX_QUEUE:-256}
-    CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
-  volumes:
-    # Bind-mount source for hot reload in development only.
-    - ./app:/app/app:ro
-    - ./alembic:/app/alembic:ro
-  depends_on: &backend-deps
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-  restart: unless-stopped
+# Demo stack: PostgreSQL + the API. Nothing else.
+#   docker compose up --build        ->  http://localhost:8000/docs
+name: hotel-mvp-lite
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
-      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
-    command:
-      - postgres
-      # Surface lock waits & deadlocks in the log stream (12-Factor XI).
-      - -c
-      - log_lock_waits=on
-      - -c
-      - deadlock_timeout=1s
+      POSTGRES_USER: hotel
+      POSTGRES_PASSWORD: hotel # demo only
+      POSTGRES_DB: hotel
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U hotel -d hotel"]
+      interval: 3s
       timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  redis:
-    image: redis:7.4-alpine
-    command:
-      - redis-server
-      # AOF persistence so broker messages and holds survive a restart.
-      - --appendonly
-      - "yes"
-      # CRITICAL for correctness: Redis must NEVER evict lock keys or queued
-      # Celery messages under memory pressure. Fail writes instead.
-      - --maxmemory-policy
-      - noeviction
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  # One-shot schema migration. Every other backend service waits for it to
-  # finish successfully, so the app never boots against an outdated schema.
-  migrate:
-    <<: *backend
-    command: ["alembic", "upgrade", "head"]
-    restart: "no"
+      retries: 15
 
   api:
-    <<: *backend
-    command:
-      - uvicorn
-      - app.main:app
-      - --host=0.0.0.0
-      - --port=8000
-      - --reload
-      - --reload-dir=/app/app
-      - --proxy-headers
-      - --no-access-log
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://hotel:hotel@postgres:5432/hotel
+      SEED_DEMO_DATA: "true" # four demo rooms on first start
+      HOUSEKEEPING_INTERVAL_SECONDS: ${HOUSEKEEPING_INTERVAL_SECONDS:-60}
+      BOOKING_HOLD_TTL_SECONDS: ${BOOKING_HOLD_TTL_SECONDS:-300}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "8000:8000"
     depends_on:
-      <<: *backend-deps
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3).status == 200 else 1)"
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
-  celery-worker:
-    <<: *backend
-    command:
-      - celery
-      - --app=app.infrastructure.tasks.celery_app:celery_app
-      - worker
-      - --loglevel=INFO
-      - --concurrency=4
-      - --without-gossip
-      - --without-mingle
-    depends_on:
-      <<: *backend-deps
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "celery --app=app.infrastructure.tasks.celery_app:celery_app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  # CONCURRENCY NOTE: Celery Beat is a scheduler, not a worker. Running more
-  # than one instance would enqueue every periodic task N times. Keep it at
-  # exactly one replica (tasks are additionally idempotent).
-  celery-beat:
-    <<: *backend
-    command:
-      - celery
-      - --app=app.infrastructure.tasks.celery_app:celery_app
-      - beat
-      - --loglevel=INFO
-      - --schedule=/tmp/celerybeat-schedule
-    deploy:
-      replicas: 1
-    depends_on:
-      <<: *backend-deps
-      migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
-  redisdata:

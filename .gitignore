@@ -1,23 +1,12 @@
-# Environment (12-Factor: config lives in the environment, never in git)
 .env
 .env.*
 !.env.example
-
-# Python
 __pycache__/
 *.py[cod]
 .venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-.coverage
-htmlcov/
-celerybeat-schedule*
-
-# OS / IDE
 .DS_Store
 .idea/
 .vscode/
-
-# Local Redis snapshots
-dump.rdb

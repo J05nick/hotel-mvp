@@ -1,8 +1,7 @@
 [project]
-name = "hotel-backend"
+name = "hotel-backend-lite"
 version = "0.1.0"
-description = "Hotel booking by 30-minute time blocks — FastAPI backend (Hexagonal Architecture)"
-readme = "README.md"
+description = "Hotel booking by 30-minute blocks — demo edition: FastAPI + PostgreSQL only"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115",
@@ -11,10 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "email-validator>=2.2",
     "sqlalchemy[asyncio]>=2.0.36",
-    "psycopg[binary,pool]>=3.2",
-    "alembic>=1.14",
-    "redis[hiredis]>=5.2",
-    "celery[redis]>=5.4",
+    "psycopg[binary]>=3.2",
 ]
 
 [dependency-groups]
@@ -22,53 +18,30 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "httpx>=0.28",
-    "mypy>=1.13",
     "ruff>=0.8",
-    "celery-types>=0.22",
+    "mypy>=1.13",
 ]
 
 [tool.uv]
 package = false
 
-# --------------------------------------------------------------------------- ruff
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "S", "PT", "TID"]
-ignore = ["S101"]  # assert is fine in tests
-
-[tool.ruff.lint.per-file-ignores]
-"alembic/versions/*.py" = ["N999"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "ASYNC"]
 
 [tool.ruff.lint.isort]
-# The local `alembic/` migrations dir must not shadow the third-party package.
-known-third-party = ["alembic"]
 known-first-party = ["app"]
 
-[tool.ruff.lint.flake8-tidy-imports]
-ban-relative-imports = "all"
-
-# --------------------------------------------------------------------------- mypy
 [tool.mypy]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
-warn_unreachable = true
-mypy_path = "."
 explicit_package_bases = true
 
-[tool.pydantic-mypy]
-init_forbid_extra = true
-init_typed = true
-warn_required_dynamic_aliases = true
-
-# --------------------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = [
-    "integration: requires a real PostgreSQL (set TEST_DATABASE_URL)",
-]
